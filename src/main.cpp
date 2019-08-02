@@ -5,6 +5,8 @@
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/regex.hpp>
+#include <boost/tokenizer.hpp>
 
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
@@ -55,19 +57,36 @@ bool is_excluded(const fs::path& path, std::vector<fs::path>& excl_paths) {
     if (excl_paths.empty())
         return false;
 
-    std::find(excl_paths.begin(), excl_paths.end(), path)
+    const auto p = fs::system_complete(path);
+    const auto it = std::find(excl_paths.begin(), excl_paths.end(), p);
+    if (it == excl_paths.end())
+        return false;
+
+    excl_paths.erase(it);
+    return true;
 }
 
-template <typename DirIt, typename OutIt>
-OutIt search_regular_files(DirIt f, DirIt l, OutIt out) {
+template <typename DirIt, typename Func>
+void apply_on_regular_files(DirIt f, DirIt l, std::vector<fs::path>& excl_paths, Func&& fn) {
     for (; f != l; ++f) {
         const auto& dir_entry = *f;
-        if (!fs::is_regular_file(dir_entry.path()))
+        if (is_excluded(dir_entry.path(), excl_paths) ||
+            !fs::is_regular_file(dir_entry.path()))
             continue;
-        *out = dir_entry.path();
-        ++out;
+        fn(dir_entry.path());
     }
-    return out;
+}
+
+bool match(const fs::path& p, const std::vector<boost::regex>& patterns) {
+    if (patterns.empty())
+        return true;
+
+    for (const auto& pattern : patterns) {
+        if (!boost::regex_match(p.filename().string(), pattern))
+            continue;
+        return true;
+    }
+    return false;
 }
 
 } // unnamed namespace
@@ -128,16 +147,18 @@ int main(int argc, char* argv[]) {
     for (auto& excl_path : excl_paths)
         excl_path = fs::system_complete(excl_path);
 
-    std::vector<fs::path> files;
+    std::vector<boost::regex> patterns;
+    
+    boost::tokenizer tokenizer;
+
     for (auto& scan_path : scan_paths) {
-        scan_path = fs::system_complete(scan_path);
         if (!fs::exists(scan_path)) {
             std::cerr << "file " << scan_path << " is not exist";
             usage(argv[0], std::cerr, visible);
             return EXIT_FAILURE;
         }
 
-        if (fs::is_regular_file(scan_path)) {
+        if (fs::is_regular_file(scan_path) && match(scan_path, )) {
             files.push_back(scan_path);
             continue;
         }
@@ -148,7 +169,8 @@ int main(int argc, char* argv[]) {
             return EXIT_FAILURE;
         }
 
-        auto it = 
+        if (is_excluded(scan_path, excl_paths))
+            continue;
 
         if (recursive)
             search_regular_files(
@@ -159,8 +181,6 @@ int main(int argc, char* argv[]) {
                 fs::recursive_directory_iterator{p}, fs::recursive_directory_iterator{},
                 std::back_inserter(files));
     }
-
-    if ()
 
     return EXIT_SUCCESS;
 }
