@@ -8,6 +8,7 @@
 #include <boost/regex.hpp>
 #include <boost/tokenizer.hpp>
 
+
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
@@ -147,9 +148,11 @@ int main(int argc, char* argv[]) {
     for (auto& excl_path : excl_paths)
         excl_path = fs::system_complete(excl_path);
 
+
+
     std::vector<boost::regex> patterns;
     
-    boost::tokenizer tokenizer;
+    boost::tokenizer<boost::char_separator<char>> tokenizer;
 
     for (auto& scan_path : scan_paths) {
         if (!fs::exists(scan_path)) {
