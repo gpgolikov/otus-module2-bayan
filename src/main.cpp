@@ -2,12 +2,13 @@
 #include <clocale>
 #include <string>
 #include <algorithm>
+#include <vector>
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
 #include <boost/tokenizer.hpp>
-#include 
+#include <boost/locale.hpp>
 
 
 namespace po = boost::program_options;
@@ -149,11 +150,11 @@ int main(int argc, char* argv[]) {
     for (auto& excl_path : excl_paths)
         excl_path = fs::system_complete(excl_path);
 
-
+    const auto wpatterns = boost::from_local_8_bit(patterns);
 
     std::vector<boost::regex> patterns;
     
-    boost::tokenizer<boost::char_separator<char>> tokenizer;
+    boost::tokenizer<boost::char_separator<wchar_t>> tokenizer;
 
     for (auto& scan_path : scan_paths) {
         if (!fs::exists(scan_path)) {
