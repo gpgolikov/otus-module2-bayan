@@ -1,4 +1,5 @@
 list(APPEND ${PROJECT_NAME}_SOURCES
+    search_engine.cpp
     main.cpp)
 
 add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES})

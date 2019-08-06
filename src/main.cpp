@@ -8,8 +8,8 @@
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
 #include <boost/tokenizer.hpp>
-#include <boost/locale.hpp>
 
+#include "search_engine.h"
 
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
@@ -17,6 +17,9 @@ namespace fs = boost::filesystem;
 using namespace std::string_literals;
 
 namespace griha {
+
+/// @name Converters of custom types have to be supported by @c boost::program_options
+/// @{
 
 enum class hash_algo {
     md5,
@@ -46,9 +49,12 @@ inline std::istream& operator>> (std::istream& is, hash_algo& hash) {
     return is;
 }
 
-} // namespace griha
+/// @}
 
 namespace {
+
+/// @name Free functions to process command line options
+/// @{
 
 void usage(const char* argv0, std::ostream& os, const po::options_description& opts_desc) {
     os << "Usage:" << std::endl
@@ -56,60 +62,43 @@ void usage(const char* argv0, std::ostream& os, const po::options_description& o
        << '\t' << opts_desc << std::endl;
 }
 
-bool is_excluded(const fs::path& path, std::vector<fs::path>& excl_paths) {
-    if (excl_paths.empty())
-        return false;
+auto create_rxpatters(const std::wstring& patterns) {
+    using separator_type = boost::char_separator<wchar_t>;
+    using tokenizer_type = boost::tokenizer<separator_type, std::wstring::iterator, std::wstring>;
 
-    const auto p = fs::system_complete(path);
-    const auto it = std::find(excl_paths.begin(), excl_paths.end(), p);
-    if (it == excl_paths.end())
-        return false;
+    std::vector<boost::wregex> ret;
+    
+    tokenizer_type tok { patterns, separator_type { L",;:" } };
+    for (const auto& t : tok)
+        ret.emplace_back(t, boost::regex::basic|boost::regex::icase);
 
-    excl_paths.erase(it);
-    return true;
+    ret.shrink_to_fit();
+    return ret;
 }
 
-template <typename DirIt, typename Func>
-void apply_on_regular_files(DirIt f, DirIt l, std::vector<fs::path>& excl_paths, Func&& fn) {
-    for (; f != l; ++f) {
-        const auto& dir_entry = *f;
-        if (is_excluded(dir_entry.path(), excl_paths) ||
-            !fs::is_regular_file(dir_entry.path()))
-            continue;
-        fn(dir_entry.path());
-    }
-}
-
-bool match(const fs::path& p, const std::vector<boost::regex>& patterns) {
-    if (patterns.empty())
-        return true;
-
-    for (const auto& pattern : patterns) {
-        if (!boost::regex_match(p.filename().string(), pattern))
-            continue;
-        return true;
-    }
-    return false;
-}
+/// @}
 
 } // unnamed namespace
+} // namespace griha
 
 int main(int argc, char* argv[]) {
+    using namespace griha;
+
     constexpr auto c_default_block_size = 1024;
     constexpr auto c_default_file_min_size = 1;
     constexpr auto c_default_hash_algo = griha::hash_algo::md5;
 
     bool opt_help, recursive;
     std::string patterns;
-    std::vector<fs::path> scan_paths, excl_paths;
+    std::vector<fs::path> paths_scan, paths_exclude;
     size_t file_min_size, block_size;
-    griha::hash_algo halgo;
+    hash_algo halgo;
 
     // command line options
     po::options_description generic { "Options" };
     generic.add_options()
             ("help,h", po::bool_switch(&opt_help), "prints out this message")
-            ("exclude-path,E", po::value(&excl_paths), "path to be excluded from scanning")
+            ("exclude-path,E", po::value(&paths_exclude), "path to be excluded from scanning")
             ("patterns,P", po::value(&patterns), "patterns of files to be scanned")
             ("block-size,B", po::value(&block_size)->default_value(c_default_block_size),
                              "block size in bytes")
@@ -121,7 +110,7 @@ int main(int argc, char* argv[]) {
 
     // Next options allowed at command line, but isn't shown in help
     po::options_description hidden {};
-    hidden.add_options()("scan-path", po::value(&scan_paths));
+    hidden.add_options()("scan-path", po::value(&paths_scan));
     po::positional_options_description pos;
     pos.add("scan-path", -1);
 
@@ -144,48 +133,20 @@ int main(int argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
 
-    if (scan_paths.empty())
-        scan_paths.push_back(fs::current_path());
+    if (paths_scan.empty())
+        paths_scan.push_back(fs::current_path());
 
-    for (auto& excl_path : excl_paths)
-        excl_path = fs::system_complete(excl_path);
+    for (auto& path : paths_exclude)
+        path = fs::system_complete(path);
 
-    const auto wpatterns = boost::from_local_8_bit(patterns);
+    SearchEngine::InitParams init_params = {
+        std::move(paths_scan),
+        std::move(paths_exclude),
+        create_rxpatters(boost::from_local_8_bit(patterns))
+    };
+    SearchEngine sengine { std::move(init_params) };
 
-    std::vector<boost::regex> patterns;
-    
-    boost::tokenizer<boost::char_separator<wchar_t>> tokenizer;
-
-    for (auto& scan_path : scan_paths) {
-        if (!fs::exists(scan_path)) {
-            std::cerr << "file " << scan_path << " is not exist";
-            usage(argv[0], std::cerr, visible);
-            return EXIT_FAILURE;
-        }
-
-        if (fs::is_regular_file(scan_path) && match(scan_path, )) {
-            files.push_back(scan_path);
-            continue;
-        }
-
-        if (!fs::is_directory(scan_path)) {
-            std::cerr << "file " << scan_path << " is not a regular file or directory";
-            usage(argv[0], std::cerr, visible);
-            return EXIT_FAILURE;
-        }
-
-        if (is_excluded(scan_path, excl_paths))
-            continue;
-
-        if (recursive)
-            search_regular_files(
-                fs::directory_iterator{p}, fs::directory_iterator{},
-                std::back_inserter(files));
-        else
-            search_regular_files(
-                fs::recursive_directory_iterator{p}, fs::recursive_directory_iterator{},
-                std::back_inserter(files));
-    }
+    sengine.run();
 
     return EXIT_SUCCESS;
 }
