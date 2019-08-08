@@ -9,15 +9,14 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
-
-namespace fs = boost::filesystem;
+#include <boost/intrusive_ptr.hpp>
 
 namespace griha {
         
 class SearchEngine {
 
 public:
-    using paths_type = std::vector<fs::path>;
+    using paths_type = std::vector<boost::filesystem::path>;
     using rxpatterns_type = std::vector<boost::wregex>;
 
     struct InitParams {
@@ -29,12 +28,11 @@ public:
 public:
     explicit SearchEngine(InitParams init_params);
 
-    void run();
+    void run(bool recursive);
 
 private:
-    paths_type paths_scan_;
-    paths_type paths_exclude_;
-    rxpatterns_type rxpatterns_;
+    struct Impl;
+    boost::intrusive_ptr<Impl> pimpl_;
 };
 
 } // namespace griha

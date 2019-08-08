@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
     };
     SearchEngine sengine { std::move(init_params) };
 
-    sengine.run();
+    sengine.run(recursive);
 
     return EXIT_SUCCESS;
 }
