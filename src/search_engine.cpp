@@ -11,6 +11,9 @@
 #include <boost/container/options.hpp>
 #include <boost/container/map.hpp>
 
+#include <cryptopp/md5.h>
+#include <cryptopp/sha.h>
+
 namespace fs = boost::filesystem;
 namespace cont = boost::container;
 
@@ -63,35 +66,75 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
 
         cont::vector<fs::path, void, vector_options> duplicates;
         cont::map<std::string, Node> childs;
+        fs::path file_to_compare;
     };
 
     explicit Impl(SearchEngine::InitParams init_params)
-        : paths_scan_(std::move(init_params.paths_scan))
-        , paths_exclude_(std::move(init_params.paths_exclude))
-        , rxpatterns_(std::move(init_params.rxpatterns)) {}
+        : algo(init_params.algo)
+        , block_size(init_params.block_size)
+        , file_min_size(init_params.file_min_size)
+        , paths_scan(std::move(init_params.paths_scan))
+        , paths_exclude(std::move(init_params.paths_exclude))
+        , rxpatterns(std::move(init_params.rxpatterns)) {}
 
-    SearchEngine::paths_type paths_scan_;
-    SearchEngine::paths_type paths_exclude_;
-    SearchEngine::rxpatterns_type rxpatterns_;
+    hash_algo algo;
+    size_t block_size;
+    size_t file_min_size;
+    SearchEngine::paths_type paths_scan;
+    SearchEngine::paths_type paths_exclude;
+    SearchEngine::rxpatterns_type rxpatterns;
 
-    void run(bool recurdive);
+    bool clean;
+    Node root;
 
-    void process(const boost::filesystem::path& file_path);
+    void clear();
+    void pre_process(const fs::path& file_path);
+    void process(const fs::path& file_path);
+    void run(bool recursive);
 };
 
-void SearchEngine::Impl::process(const boost::filesystem::path& file_path)
-{
+void SearchEngine::Impl::clear() {
+    root.duplicates.clear();
+    root.childs.clear();
+    root.file_to_compare.clear();
+    clean = true; 
+}
 
+void SearchEngine::Impl::pre_process(const fs::path& file_path) {
+    if (!fs::is_regular_file(file_path))
+        return;
+
+    process(file_path);
+}
+
+void SearchEngine::Impl::process(const fs::path& file_path) {
+    if (!match_any(file_path, rxpatterns) ||
+            fs::file_size(file_path) < file_min_size)
+        return;
+
+    if (clean) {
+        root.file_to_compare = file_path;
+        clean = false;
+        return;
+    }
+
+    
+
+    for (Node& n = root;;) {
+        if (!n.file_to_compare.empty())
+    }
 }
 
 void SearchEngine::Impl::run(bool recursive) {
-    for (const auto& path : paths_scan_) {
+    clear();
+
+    for (const auto& path : paths_scan) {
         if (!fs::exists(path)) {
             std::cerr << path << " is not exist" << std::endl;
             continue;
         }
 
-        if (fs::is_regular_file(path) && match_any(path, rxpatterns_)) {
+        if (fs::is_regular_file(path)) {
             process(path);
             continue;
         }
@@ -101,17 +144,17 @@ void SearchEngine::Impl::run(bool recursive) {
             continue;
         }
 
-        if (is_excluded(path, paths_exclude_))
+        if (is_excluded(path, paths_exclude))
             continue;
 
         if (recursive)
             std::for_each(
                 fs::directory_iterator{path}, fs::directory_iterator{},
-                boost::bind(&Impl::process, this, boost::placeholders::_1));
+                boost::bind(&Impl::pre_process, this, boost::placeholders::_1));
         else
             std::for_each(
                 fs::recursive_directory_iterator{path}, fs::recursive_directory_iterator{},
-                boost::bind(&Impl::process, this, boost::placeholders::_1));
+                boost::bind(&Impl::pre_process, this, boost::placeholders::_1));
     }
 }
 

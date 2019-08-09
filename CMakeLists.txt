@@ -20,6 +20,7 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 conan_cmake_run(REQUIRES
                     Catch2/2.7.2@catchorg/stable
                     boost/1.70.0@conan/stable
+                    cryptopp/7.0.0@bincrafters/stable
                 OPTIONS
                     boost:layout=system
                 BASIC_SETUP CMAKE_TARGETS

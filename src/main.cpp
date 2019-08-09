@@ -21,11 +21,6 @@ namespace griha {
 /// @name Converters of custom types have to be supported by @c boost::program_options
 /// @{
 
-enum class hash_algo {
-    md5,
-    sha256
-};
-
 inline std::ostream& operator<< (std::ostream& os, hash_algo hash) {
     switch (hash) {
     case hash_algo::md5: os << "md5"; break;

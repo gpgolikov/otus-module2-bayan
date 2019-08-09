@@ -12,6 +12,11 @@
 #include <boost/intrusive_ptr.hpp>
 
 namespace griha {
+
+enum class hash_algo {
+    md5,
+    sha256
+};
         
 class SearchEngine {
 
@@ -20,6 +25,9 @@ public:
     using rxpatterns_type = std::vector<boost::wregex>;
 
     struct InitParams {
+        hash_algo algo;
+        size_t block_size;
+        size_t file_min_size;
         paths_type paths_scan;
         paths_type paths_exclude;
         rxpatterns_type rxpatterns;

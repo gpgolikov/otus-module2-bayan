@@ -3,7 +3,7 @@ list(APPEND ${PROJECT_NAME}_SOURCES
     main.cpp)
 
 add_executable(${PROJECT_NAME} ${${PROJECT_NAME}_SOURCES})
-target_link_libraries(${PROJECT_NAME} CONAN_PKG::boost)
+target_link_libraries(${PROJECT_NAME} CONAN_PKG::boost CONAN_PKG::cryptopp)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD 17
