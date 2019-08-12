@@ -36,6 +36,8 @@ public:
 public:
     explicit SearchEngine(InitParams init_params);
 
+    ~SearchEngine();
+
     void run(bool recursive);
 
 private:

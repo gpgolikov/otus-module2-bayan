@@ -135,6 +135,9 @@ int main(int argc, char* argv[]) {
         path = fs::system_complete(path);
 
     SearchEngine::InitParams init_params = {
+        halgo,
+        block_size,
+        file_min_size,
         std::move(paths_scan),
         std::move(paths_exclude),
         create_rxpatters(boost::from_local_8_bit(patterns))
