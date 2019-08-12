@@ -11,6 +11,7 @@
 #include <boost/container/options.hpp>
 #include <boost/container/map.hpp>
 
+#define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
 #include <cryptopp/md5.h>
 #include <cryptopp/sha.h>
 
@@ -55,6 +56,21 @@ bool match_any(const fs::path& p, const SearchEngine::rxpatterns_type& patterns)
         return true;
     }
     return false;
+}
+
+template <hash_algo Algo> void calc_hash() {
+    static_assert(false, "unknown hash algorithm");
+}
+
+template <>
+void calc_hash<hash_algo::md5>() {
+    CryptoPP::Weak::MD5 hash;
+
+}
+
+template <>
+void calc_hash<hash_algo::sha256>() {
+    CryptoPP::SHA256 hash;
 }
 
 } // unnamed namespace
@@ -120,8 +136,8 @@ void SearchEngine::Impl::process(const fs::path& file_path) {
 
     
 
-    for (Node& n = root;;) {
-        if (!n.file_to_compare.empty())
+    for (Node* n = &root;;) {
+        if (!n->file_to_compare.empty())
     }
 }
 
