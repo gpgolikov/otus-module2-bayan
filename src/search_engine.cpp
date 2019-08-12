@@ -10,10 +10,13 @@
 #include <boost/container/vector.hpp>
 #include <boost/container/options.hpp>
 #include <boost/container/map.hpp>
+#include <boost/scoped_ptr.hpp>
 
 #define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
 #include <cryptopp/md5.h>
 #include <cryptopp/sha.h>
+#include <cryptopp/filters.h>
+#include <cryptopp/base64.h>
 
 namespace fs = boost::filesystem;
 namespace cont = boost::container;
@@ -58,19 +61,14 @@ bool match_any(const fs::path& p, const SearchEngine::rxpatterns_type& patterns)
     return false;
 }
 
-template <hash_algo Algo> void calc_hash() {
-    static_assert(false, "unknown hash algorithm");
-}
-
-template <>
-void calc_hash<hash_algo::md5>() {
-    CryptoPP::Weak::MD5 hash;
-
-}
-
-template <>
-void calc_hash<hash_algo::sha256>() {
-    CryptoPP::SHA256 hash;
+boost::scoped_ptr<CryptoPP::HashTransformation> make_hash(hash_algo algo) {
+    switch (algo) {
+    case hash_algo::md5:
+        return boost::scoped_ptr { new CryptoPP::Weak::MD5 {} };
+    case hash_algo::sha256:
+        return boost::scoped_ptr { new CryptoPP::SHA256 {} };
+    }
+    throw std::invalid_argument { "unknown hash agorithm" };
 }
 
 } // unnamed namespace
@@ -86,14 +84,22 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
     };
 
     explicit Impl(SearchEngine::InitParams init_params)
-        : algo(init_params.algo)
+        : hash(make_hash(init_params.algo))
+        , hash_filter(*hash, new CryptoPP::Base64Encoder(new CryptoPP::StringSink(hash_sink), false))
         , block_size(init_params.block_size)
         , file_min_size(init_params.file_min_size)
         , paths_scan(std::move(init_params.paths_scan))
         , paths_exclude(std::move(init_params.paths_exclude))
         , rxpatterns(std::move(init_params.rxpatterns)) {}
 
-    hash_algo algo;
+    /// @name hashing support fields
+    /// @note order of these fields initialization is important
+    /// @{
+    boost::scoped_ptr<CryptoPP::HashTransformation> hash;
+    std::string hash_sink;
+    CryptoPP::HashFilter hash_filter;
+    /// @}
+
     size_t block_size;
     size_t file_min_size;
     SearchEngine::paths_type paths_scan;
