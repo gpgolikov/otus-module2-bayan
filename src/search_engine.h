@@ -17,27 +17,31 @@ enum class hash_algo {
     md5,
     sha256
 };
-        
+
 class SearchEngine {
 
     struct Impl;
 
+public:
+
+    using paths_type = std::vector<boost::filesystem::path>;
+    using rxpatterns_type = std::vector<boost::wregex>;
+
+private:
     class Iterator {
+
+        struct Impl;
+
     public:
-        using vector_options = cont::vector_options_t<cont::growth_factor<cont::growth_factor_50>>;
-        using value_type = cont::vector<const fs::path, void, vector_options>;
+        using value_type = paths_type;
 
     private:
-        struct Impl;
         boost::intrusive_ptr<Impl> pimpl_;
     };
 
 public:
     using iterator = Iterator;
     using const_iterator = Iterator;
-
-    using paths_type = std::vector<boost::filesystem::path>;
-    using rxpatterns_type = std::vector<boost::wregex>;
 
     struct InitParams {
         hash_algo algo;

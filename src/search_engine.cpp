@@ -8,9 +8,8 @@
 #include <fstream>
 
 #include <boost/bind.hpp>
-#include <boost/container/vector.hpp>
-#include <boost/container/options.hpp>
 #include <boost/container/map.hpp>
+#include <boost/container/slist.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/range/adaptor/sliced.hpp>
 #include <boost/range/algorithm.hpp>
@@ -78,11 +77,11 @@ CryptoPP::HashTransformation* make_hash(hash_algo algo) {
 
 struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boost::thread_unsafe_counter> {
 
+    struct Node;
+    using nodes_type = cont::map<std::string, Node>;
     struct Node {
-        using vector_options = cont::vector_options_t<cont::growth_factor<cont::growth_factor_50>>;
-
-        cont::vector<fs::path, void, vector_options> duplicates;
-        cont::map<std::string, Node> childs;
+        paths_type duplicates;
+        nodes_type childs;
         fs::path file_to_compare;
     };
 
@@ -126,6 +125,68 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
     void pre_process(const fs::path& file_path);
     void process(const fs::path& file_path);
     void run(bool recursive);
+};
+
+struct SearchEngine::Iterator::Impl {
+    using node_type = SearchEngine::Impl::Node;
+    using nodes_type = SearchEngine::Impl::nodes_type;
+
+    const node_type& root;
+    cont::slist<typename nodes_type::const_iterator> path;
+    bool is_end;
+
+    Impl(const node_type& r) 
+        : root(r) {}
+
+    Impl(const node_type& r, typename nodes_type::const_iterator& it) 
+        : root(r) {
+        path.push_front(it);
+    }
+
+    void lookup_end_at_left() {
+        assert(!path.empty());
+        assert(path.front() != root.childs.end());
+
+        const auto& n = path.front()->second;
+        if (n.end_flag) {
+            return;
+        }
+        assert(!n.childs.empty());
+        path.push_front(n.childs.begin());
+        lookup_end_at_left();
+    }
+
+   void next() {
+        assert(!path.empty());
+
+        auto it = path.front();
+        if (it == top_nodes.end()) {
+            return;
+        }
+
+        // find next element fits for end lookup procedure
+        if (it->second.childs.empty()) {
+            // go right or go up and right
+            path.pop_front();
+            for (++it; 
+                    it != top_nodes.end() &&
+                    !path.empty() &&
+                    it == path.front()->second.childs.end();
+                    ++it) {
+                it = path.front();
+                path.pop_front();
+            }
+            path.push_front(it);
+            if (it == top_nodes.end()) {
+                return; // iterator has become end iterator
+            }
+        } else {
+            // go down
+            path.push_front(it->second.childs.begin());
+        }
+        // do lookup
+        lookup_end_at_left();
+    } 
 };
 
 void SearchEngine::Impl::clear() {
