@@ -53,7 +53,7 @@ namespace {
 
 void usage(const char* argv0, std::ostream& os, const po::options_description& opts_desc) {
     os << "Usage:" << std::endl
-       << '\t' << fs::path{ argv0 }.stem().c_str() << " [options] [<path-to-scan> ...]" << std::endl
+       << '\t' << fs::path{ argv0 }.stem().string() << " [options] [<path-to-scan> ...]" << std::endl
        << '\t' << opts_desc << std::endl;
 }
 
@@ -101,7 +101,7 @@ int main(int argc, char* argv[]) {
                            "minimum file size to be scanned in bytes")
             ("hash,H", po::value(&halgo)->default_value(c_default_hash_algo),
                        "hash algorithm, md5, sha256")
-            ("recursive,r", po::value(&recursive), "scan recursively");
+            ("recursive,r", po::bool_switch(&recursive), "scan recursively");
 
     // Next options allowed at command line, but isn't shown in help
     po::options_description hidden {};
@@ -114,9 +114,8 @@ int main(int argc, char* argv[]) {
     visible.add(generic);
 
     po::variables_map opts;
-    po::store(po::command_line_parser(argc, argv).options(cmd_line).positional(pos).run(), opts);
-
     try {
+        po::store(po::command_line_parser(argc, argv).options(cmd_line).positional(pos).run(), opts);
         notify(opts);
     } catch (...) {
         usage(argv[0], std::cerr, visible);

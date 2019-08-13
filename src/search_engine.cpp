@@ -56,20 +56,20 @@ bool match_any(const fs::path& p, const SearchEngine::rxpatterns_type& patterns)
         return true;
 
     for (const auto& pattern : patterns) {
-        const auto p_wstr = p.filename().wstring();
-        if (!boost::regex_match(p_wstr, pattern))
+        if (!boost::regex_match(p.filename().wstring(), pattern))
             continue;
         return true;
     }
     return false;
 }
 
-auto make_hash(hash_algo algo) {
+CryptoPP::HashTransformation* make_hash(hash_algo algo) {
     switch (algo) {
     case hash_algo::md5:
-        return boost::scoped_ptr<CryptoPP::HashTransformation> { new CryptoPP::Weak::MD5 {} };
+        // return boost::scoped_ptr<CryptoPP::HashTransformation> { new CryptoPP::Weak::MD5 {} };
+        return new CryptoPP::Weak::MD5 {};
     case hash_algo::sha256:
-        return boost::scoped_ptr<CryptoPP::HashTransformation> { new CryptoPP::SHA256 {} };
+        return new CryptoPP::SHA256 {};
     }
     throw std::invalid_argument { "unknown hash agorithm" };
 }
@@ -145,8 +145,7 @@ const std::string& SearchEngine::Impl::hash_block(std::ifstream& is, size_t leve
         rng::fill(buffer | boost::adaptors::sliced(is.gcount(), block_size), '\0');
 
     hash_sink.clear(); // actually this call never reduces the capacity of string
-    hash_filter.Put(reinterpret_cast<CryptoPP::byte*>(buffer.data()), block_size);
-    hash_filter.MessageEnd();
+    hash_filter.PutMessageEnd(reinterpret_cast<CryptoPP::byte*>(buffer.data()), block_size);
     return hash_sink;
 }
 
@@ -214,11 +213,11 @@ void SearchEngine::Impl::run(bool recursive) {
 
         if (recursive)
             std::for_each(
-                fs::directory_iterator{path}, fs::directory_iterator{},
+                fs::recursive_directory_iterator{path}, fs::recursive_directory_iterator{},
                 boost::bind(&Impl::pre_process, this, boost::placeholders::_1));
         else
             std::for_each(
-                fs::recursive_directory_iterator{path}, fs::recursive_directory_iterator{},
+                fs::directory_iterator{path}, fs::directory_iterator{},
                 boost::bind(&Impl::pre_process, this, boost::placeholders::_1));
     }
 }
