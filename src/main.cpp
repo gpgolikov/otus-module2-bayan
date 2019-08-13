@@ -59,7 +59,7 @@ void usage(const char* argv0, std::ostream& os, const po::options_description& o
 
 auto create_rxpatters(const std::wstring& patterns) {
     using separator_type = boost::char_separator<wchar_t>;
-    using tokenizer_type = boost::tokenizer<separator_type, std::wstring::iterator, std::wstring>;
+    using tokenizer_type = boost::tokenizer<separator_type, std::wstring::const_iterator, std::wstring>;
 
     std::vector<boost::wregex> ret;
     

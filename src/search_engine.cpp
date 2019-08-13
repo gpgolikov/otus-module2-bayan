@@ -56,7 +56,8 @@ bool match_any(const fs::path& p, const SearchEngine::rxpatterns_type& patterns)
         return true;
 
     for (const auto& pattern : patterns) {
-        if (!boost::regex_match(p.filename().wstring(), pattern))
+        const auto p_wstr = p.filename().wstring();
+        if (!boost::regex_match(p_wstr, pattern))
             continue;
         return true;
     }
@@ -169,12 +170,13 @@ void SearchEngine::Impl::process(const fs::path& file_path) {
         if (!n->file_to_compare.empty()) {
             fs::ifstream ifs_to_compare { n->file_to_compare };
             auto block_to_compare = hash_block(ifs_to_compare, level);
-            if (ifs_to_compare.eof())
+            if (ifs_to_compare.eof()) {
                 n->childs[std::move(block_to_compare)].duplicates.push_back(n->file_to_compare);
-            else
+                n->file_to_compare.clear();
+            } else
                 n->childs[std::move(block_to_compare)].file_to_compare.swap(n->file_to_compare);
         } else if (n->childs.empty()) {
-            root.file_to_compare = file_path;
+            n->file_to_compare = file_path;
             break;
         }
 
