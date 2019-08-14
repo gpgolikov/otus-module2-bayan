@@ -17,6 +17,10 @@ include(${CMAKE_BINARY_DIR}/conan.cmake)
 
 # set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
+if(UNIX AND NOT APPLE)
+    add_compile_options("-stdlib=libc++")
+endif()
+
 conan_cmake_run(REQUIRES
                     Catch2/2.7.2@catchorg/stable
                     boost/1.70.0@conan/stable
