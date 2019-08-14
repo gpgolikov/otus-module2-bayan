@@ -4,10 +4,10 @@ compiler: clang
 addons:
   apt:
     sources:
-    - llvm-toolchain-xenial-7
+    - llvm-toolchain-xenial-8
     packages:
-    - libc++-7-dev
-    - libc++abi-7-dev
+    - libc++-8-dev
+    - libc++abi-8-dev
     update: true
 install:
 - pip install --user conan
