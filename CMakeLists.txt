@@ -23,7 +23,7 @@ endif()
 
 conan_cmake_run(REQUIRES
                     boost/1.70.0@conan/stable
-                    cryptopp/7.0.0@bincrafters/stable
+                    cryptopp/5.6.5@bincrafters/stable
                 OPTIONS
                     boost:layout=system
                 BASIC_SETUP CMAKE_TARGETS
