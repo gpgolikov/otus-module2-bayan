@@ -1,6 +1,6 @@
 # otus-module2-bayan
 
-OTUS modile 2 homework - _bayan_
+OTUS module 2 homework - _bayan_
 
 ## installation
 ```
