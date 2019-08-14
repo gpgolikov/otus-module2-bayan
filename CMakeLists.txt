@@ -22,7 +22,6 @@ if(UNIX AND NOT APPLE)
 endif()
 
 conan_cmake_run(REQUIRES
-                    Catch2/2.7.2@catchorg/stable
                     boost/1.70.0@conan/stable
                     cryptopp/7.0.0@bincrafters/stable
                 OPTIONS

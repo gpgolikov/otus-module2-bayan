@@ -173,7 +173,7 @@ const std::string& SearchEngine::Impl::hash_block(std::ifstream& is, size_t leve
         rng::fill(buffer | boost::adaptors::sliced(is.gcount(), block_size), '\0');
 
     hash_sink.clear(); // actually this call never reduces the capacity of string
-    hash_filter.PutMessageEnd(reinterpret_cast<CryptoPP::byte*>(buffer.data()), block_size);
+    hash_filter.PutMessageEnd(reinterpret_cast<uint8_t*>(buffer.data()), block_size);
     return hash_sink;
 }
 
