@@ -65,7 +65,7 @@ auto create_rxpatters(const std::wstring& patterns) {
     
     tokenizer_type tok { patterns, separator_type { L",;:" } };
     for (const auto& t : tok)
-        ret.emplace_back(t, boost::regex::basic|boost::regex::icase);
+        ret.emplace_back(t, boost::regex::extended|boost::regex::icase);
 
     ret.shrink_to_fit();
     return ret;
