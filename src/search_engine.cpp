@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <stdexcept>
 
 #include <boost/bind.hpp>
 #include <boost/container/map.hpp>
@@ -28,15 +29,15 @@ namespace griha {
 
 namespace {
 
-bool is_excluded(const fs::path& path, const SearchEngine::paths_type& excl_paths) {
-    if (excl_paths.empty())
+bool is_excluded(const fs::path& path, const SearchEngine::paths_type& paths_exclude) {
+    if (paths_exclude.empty())
         return false;
 
     const auto p = fs::system_complete(path);
-    const auto it = rng::find_if(excl_paths, [&lhs = path] (const fs::path& rhs) {
-        return rng::mismatch(lhs, rhs).first == lhs.end();
+    const auto it = rng::find_if(paths_exclude, [&lhs = p] (const fs::path& rhs) {
+        return rng::mismatch(lhs, rhs).second == rhs.end();
     });
-    return it != excl_paths.end();
+    return it != paths_exclude.end();
 }
 
 template <typename DirIt, typename Func>
@@ -126,30 +127,28 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
     void run(bool recursive);
 };
 
-struct SearchEngine::Iterator::Impl {
+
+struct SearchEngine::Iterator::Accessor::Impl {
     using node_type = SearchEngine::Impl::Node;
     using nodes_type = SearchEngine::Impl::nodes_type;
 
     const node_type& root;
+    boost::optional<typename nodes_type::const_iterator> iterator;
+    bool on_file_to_compare;
+};
+
+struct SearchEngine::Iterator::Impl {
+    using node_type = Accessor::Impl::node_type;
+    using nodes_type = Accessor::Impl::nodes_type;
+    
+    Accessor::Impl accessor;
     cont::slist<typename nodes_type::const_iterator> path;
-    bool on_file_to_compare { false };
 
-    explicit Impl(const node_type& r) 
-        : root(r) {}
-
-    Impl(const node_type& r, typename nodes_type::const_iterator& it) 
-        : root(r) {
-        path.push_front(it);
-    }
+    explicit Impl(const node_type& r);
+    Impl(const node_type& r, typename nodes_type::const_iterator& it);
 
     void lookup_end_at_left();
     void next();
-};
-
-struct SearchEngine::Iterator::Accessor::Impl {
-    const Iterator::Impl::node_type& root;
-    const boost::optional<Iterator::Impl::nodes_type::const_iterator> iterator;
-    const bool on_file_to_compare;
 };
 
 void SearchEngine::Impl::clear() {
@@ -246,18 +245,28 @@ void SearchEngine::Impl::run(bool recursive) {
     }
 }
 
+SearchEngine::Iterator::Impl::Impl(const node_type& r) 
+    : accessor(Accessor::Impl { r, boost::none, false }) {}
+
+SearchEngine::Iterator::Impl::Impl(const node_type& r, typename nodes_type::const_iterator& it) 
+    : accessor(Accessor::Impl { r, it, false }) {
+    path.push_front(it);
+}
+
 void SearchEngine::Iterator::Impl::lookup_end_at_left() {
     assert(!path.empty());
-    assert(path.front() != root.childs.end());
+    assert(path.front() != accessor.root.childs.end());
+
+    *accessor.iterator = path.front();
 
     const auto& n = path.front()->second;
     if (!n.duplicates.empty()) {
-        on_file_to_compare = false;
+        accessor.on_file_to_compare = false;
         return;
     }
     
     if (!n.file_to_compare.empty()) {
-        on_file_to_compare = true;
+        accessor.on_file_to_compare = true;
         return;
     }
     
@@ -268,17 +277,17 @@ void SearchEngine::Iterator::Impl::lookup_end_at_left() {
 
 void SearchEngine::Iterator::Impl::next() {
     if (path.empty()) { // achieved end iterator in empty collection
-        path.push_front(root.childs.end());
-        on_file_to_compare = false;
+        path.push_front(accessor.root.childs.end());
+        accessor.on_file_to_compare = false;
         return;
     }
 
     auto it = path.front();
-    if (it == root.childs.end())
+    if (it == accessor.root.childs.end())
         return; // stay on end iterator forever
 
-    if (!on_file_to_compare && !it->second.file_to_compare.empty()) {
-        on_file_to_compare = true;
+    if (!accessor.on_file_to_compare && !it->second.file_to_compare.empty()) {
+        accessor.on_file_to_compare = true;
         return; // just move to file_to_compare
     }
 
@@ -287,15 +296,17 @@ void SearchEngine::Iterator::Impl::next() {
         // go right or go up and right
         path.pop_front();
         for (++it; 
-                it != root.childs.end() &&
+             it != accessor.root.childs.end() &&
                 !path.empty() &&
                 it == path.front()->second.childs.end();
-                ++it) {
+             ++it) {
             it = path.front();
             path.pop_front();
         }
         path.push_front(it);
-        if (it == root.childs.end()) {
+        if (it == accessor.root.childs.end()) {
+            accessor.iterator = boost::none;
+            accessor.on_file_to_compare = false;
             return; // iterator has become end iterator
         }
     } else {
@@ -306,13 +317,44 @@ void SearchEngine::Iterator::Impl::next() {
     lookup_end_at_left();
 } 
 
-SearchEngine::~SearchEngine() = default;
+SearchEngine::Iterator::Accessor::~Accessor() = default;
 
-SearchEngine::SearchEngine(InitParams init_params)
-    : pimpl_(new Impl { std::move(init_params) }) {}
+SearchEngine::Iterator::Accessor::Accessor(Impl* impl)
+    : pimpl_(impl) {}
 
-void SearchEngine::run(bool recursive) {
-    pimpl_->run(recursive);
+SearchEngine::Iterator::Accessor::Accessor(Accessor&& src) {
+    pimpl_.swap(src.pimpl_);
+}
+
+auto SearchEngine::Iterator::Accessor::operator= (Accessor&& rhs) -> Accessor& {
+    pimpl_.swap(rhs.pimpl_);
+    return *this;
+}
+
+SearchEngine::Iterator::Accessor::Accessor(const Accessor& src)
+    : pimpl_(new Impl { *src.pimpl_ }) {}
+
+auto SearchEngine::Iterator::Accessor::operator= (const Accessor& rhs) -> Accessor& {
+    pimpl_.reset(new Impl { *rhs.pimpl_ } );
+    return *this;
+}
+
+void SearchEngine::Iterator::Accessor::visit(const visitor_type& visitor) const {
+    if (!pimpl_->iterator) {
+        if (pimpl_->root.file_to_compare.empty())
+            throw std::logic_error("bad access");
+
+        visitor(pimpl_->root.file_to_compare);
+        return;
+    }
+
+    const auto it = *(pimpl_->iterator);
+    if (pimpl_->on_file_to_compare)
+        visitor(it->second.file_to_compare);
+    else {
+        for (const auto& path : it->second.duplicates)
+            visitor(path);
+    }
 }
 
 SearchEngine::Iterator::~Iterator() = default;
@@ -320,17 +362,60 @@ SearchEngine::Iterator::~Iterator() = default;
 SearchEngine::Iterator::Iterator(Impl* impl)
     : pimpl_(impl) {}
 
+SearchEngine::Iterator::Iterator(Iterator&& src) {
+    pimpl_.swap(src.pimpl_);
+}
+
+SearchEngine::Iterator::Iterator(const Iterator& src)
+    : pimpl_(new Impl { *src.pimpl_ }) {}
+
+auto SearchEngine::Iterator::operator= (Iterator&& rhs) -> Iterator& {
+    pimpl_.swap(rhs.pimpl_);
+    return *this;
+}
+
+auto SearchEngine::Iterator::operator= (const Iterator& rhs) -> Iterator& {
+    pimpl_.reset(new Impl { *rhs.pimpl_ });
+    return *this;
+}
+
 auto SearchEngine::Iterator::operator++() -> Iterator& {
     pimpl_->next();
     return *this;
 }
 
-auto SearchEngine::Iterator::operator*() -> reference {
-    if (pimpl_->path.empty())
+auto SearchEngine::Iterator::operator*() -> value_type {
+    return Accessor { new Accessor::Impl { pimpl_->accessor } };
 }
 
-pointer operator->();
+bool operator== (const SearchEngine::Iterator& lhs, const SearchEngine::Iterator& rhs) {
+    return lhs.pimpl_->accessor.on_file_to_compare == rhs.pimpl_->accessor.on_file_to_compare
+            && lhs.pimpl_->path == rhs.pimpl_->path;
+}
 
-friend bool operator== (const Iterator& lhs, const Iterator& rhs);
+SearchEngine::~SearchEngine() = default;
+
+SearchEngine::SearchEngine(InitParams init_params)
+    : pimpl_(new Impl { std::move(init_params) }) {}
+
+auto SearchEngine::begin() const -> const_iterator {
+    if (pimpl_->root.childs.empty()) {
+        if (!pimpl_->root.file_to_compare.empty())
+            return Iterator { new Iterator::Impl { pimpl_->root } };
+        return Iterator { new Iterator::Impl { pimpl_->root, pimpl_->root.childs.cbegin() } };
+    }
+
+    Iterator ret { new Iterator::Impl { pimpl_->root, pimpl_->root.childs.cbegin() } };
+    ret.pimpl_->lookup_end_at_left();
+    return ret;
+}
+
+auto SearchEngine::end() const -> const_iterator {
+    return Iterator { new Iterator::Impl { pimpl_->root, pimpl_->root.childs.cend() } };
+}
+
+void SearchEngine::run(bool recursive) {
+    pimpl_->run(recursive);
+}
 
 } // namespace griha

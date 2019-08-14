@@ -145,5 +145,12 @@ int main(int argc, char* argv[]) {
 
     sengine.run(recursive);
 
+    for (const auto& v : sengine) {
+        v.visit([] (const fs::path& path) {
+            std::cout << path << std::endl;
+        });
+        endl(std::cout);
+    }
+
     return EXIT_SUCCESS;
 }

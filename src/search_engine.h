@@ -27,10 +27,6 @@ class SearchEngine {
 
 public:
 
-    using paths_type = std::vector<boost::filesystem::path>;
-    using rxpatterns_type = std::vector<boost::wregex>;
-
-private:
     class Iterator {
 
         friend class SearchEngine;
@@ -40,6 +36,8 @@ private:
     public:
         class Accessor {
             
+            friend class Iterator;
+
             struct Impl;
 
         public:
@@ -54,10 +52,10 @@ private:
             Accessor& operator= (const Accessor& rhs);
             Accessor& operator= (Accessor&& rhs);
 
-            void visit(const visitor_type& visitor);
+            void visit(const visitor_type& visitor) const;
 
         private:
-            explicit Accessor(Iterator& it);
+            explicit Accessor(Impl* impl);
 
         private:
             boost::scoped_ptr<Impl> pimpl_;
@@ -65,17 +63,19 @@ private:
 
         using difference_type = void;
         using value_type = Accessor;
-        using reference = value_type&;
-        using pointer = value_type*;
-        using iterator_category = std::input_iterator_tag;
+        using iterator_category = std::forward_iterator_tag;
 
     public:
         ~Iterator();
 
+        Iterator(const Iterator& src);
+        Iterator(Iterator&& src);
+
+        Iterator& operator= (const Iterator& rhs);
+        Iterator& operator= (Iterator&& rhs);
+
         Iterator& operator++();
-        
-        reference operator*();
-        pointer operator->();
+        value_type operator*();
 
         friend bool operator== (const Iterator& lhs, const Iterator& rhs);
         friend bool operator!= (const Iterator& lhs, const Iterator& rhs) {
@@ -88,7 +88,9 @@ private:
         boost::scoped_ptr<Impl> pimpl_;
     };
 
-public:
+    using paths_type = std::vector<boost::filesystem::path>;
+    using rxpatterns_type = std::vector<boost::wregex>;
+
     using iterator = Iterator;
     using const_iterator = Iterator;
 
@@ -105,6 +107,9 @@ public:
     explicit SearchEngine(InitParams init_params);
 
     ~SearchEngine();
+
+    const_iterator begin() const;
+    const_iterator end() const;
 
     void run(bool recursive);
 
