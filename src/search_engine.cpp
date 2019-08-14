@@ -10,9 +10,9 @@
 #include <boost/bind.hpp>
 #include <boost/container/map.hpp>
 #include <boost/container/slist.hpp>
-#include <boost/scoped_ptr.hpp>
 #include <boost/range/adaptor/sliced.hpp>
 #include <boost/range/algorithm.hpp>
+#include <boost/optional.hpp>
 
 #define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
 #include <cryptopp/md5.h>
@@ -93,8 +93,7 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
         , rxpatterns(std::move(init_params.rxpatterns))
         , hash(make_hash(init_params.algo))
         , hash_filter(*hash, new CryptoPP::Base64Encoder(new CryptoPP::StringSink(hash_sink), false))
-        , buffer(init_params.block_size)
-    {}
+        , buffer(init_params.block_size) {}
 
     const size_t block_size;
     const size_t file_min_size;
@@ -133,9 +132,9 @@ struct SearchEngine::Iterator::Impl {
 
     const node_type& root;
     cont::slist<typename nodes_type::const_iterator> path;
-    bool is_end;
+    bool on_file_to_compare { false };
 
-    Impl(const node_type& r) 
+    explicit Impl(const node_type& r) 
         : root(r) {}
 
     Impl(const node_type& r, typename nodes_type::const_iterator& it) 
@@ -143,50 +142,14 @@ struct SearchEngine::Iterator::Impl {
         path.push_front(it);
     }
 
-    void lookup_end_at_left() {
-        assert(!path.empty());
-        assert(path.front() != root.childs.end());
+    void lookup_end_at_left();
+    void next();
+};
 
-        const auto& n = path.front()->second;
-        if (n.end_flag) {
-            return;
-        }
-        assert(!n.childs.empty());
-        path.push_front(n.childs.begin());
-        lookup_end_at_left();
-    }
-
-   void next() {
-        assert(!path.empty());
-
-        auto it = path.front();
-        if (it == top_nodes.end()) {
-            return;
-        }
-
-        // find next element fits for end lookup procedure
-        if (it->second.childs.empty()) {
-            // go right or go up and right
-            path.pop_front();
-            for (++it; 
-                    it != top_nodes.end() &&
-                    !path.empty() &&
-                    it == path.front()->second.childs.end();
-                    ++it) {
-                it = path.front();
-                path.pop_front();
-            }
-            path.push_front(it);
-            if (it == top_nodes.end()) {
-                return; // iterator has become end iterator
-            }
-        } else {
-            // go down
-            path.push_front(it->second.childs.begin());
-        }
-        // do lookup
-        lookup_end_at_left();
-    } 
+struct SearchEngine::Iterator::Accessor::Impl {
+    const Iterator::Impl::node_type& root;
+    const boost::optional<Iterator::Impl::nodes_type::const_iterator> iterator;
+    const bool on_file_to_compare;
 };
 
 void SearchEngine::Impl::clear() {
@@ -283,6 +246,66 @@ void SearchEngine::Impl::run(bool recursive) {
     }
 }
 
+void SearchEngine::Iterator::Impl::lookup_end_at_left() {
+    assert(!path.empty());
+    assert(path.front() != root.childs.end());
+
+    const auto& n = path.front()->second;
+    if (!n.duplicates.empty()) {
+        on_file_to_compare = false;
+        return;
+    }
+    
+    if (!n.file_to_compare.empty()) {
+        on_file_to_compare = true;
+        return;
+    }
+    
+    assert(!n.childs.empty());
+    path.push_front(n.childs.begin());
+    lookup_end_at_left();
+}
+
+void SearchEngine::Iterator::Impl::next() {
+    if (path.empty()) { // achieved end iterator in empty collection
+        path.push_front(root.childs.end());
+        on_file_to_compare = false;
+        return;
+    }
+
+    auto it = path.front();
+    if (it == root.childs.end())
+        return; // stay on end iterator forever
+
+    if (!on_file_to_compare && !it->second.file_to_compare.empty()) {
+        on_file_to_compare = true;
+        return; // just move to file_to_compare
+    }
+
+    // find next element fits for end lookup procedure
+    if (it->second.childs.empty()) {
+        // go right or go up and right
+        path.pop_front();
+        for (++it; 
+                it != root.childs.end() &&
+                !path.empty() &&
+                it == path.front()->second.childs.end();
+                ++it) {
+            it = path.front();
+            path.pop_front();
+        }
+        path.push_front(it);
+        if (it == root.childs.end()) {
+            return; // iterator has become end iterator
+        }
+    } else {
+        // go down
+        path.push_front(it->second.childs.begin());
+    }
+    // do lookup
+    lookup_end_at_left();
+} 
+
 SearchEngine::~SearchEngine() = default;
 
 SearchEngine::SearchEngine(InitParams init_params)
@@ -291,5 +314,23 @@ SearchEngine::SearchEngine(InitParams init_params)
 void SearchEngine::run(bool recursive) {
     pimpl_->run(recursive);
 }
+
+SearchEngine::Iterator::~Iterator() = default;
+
+SearchEngine::Iterator::Iterator(Impl* impl)
+    : pimpl_(impl) {}
+
+auto SearchEngine::Iterator::operator++() -> Iterator& {
+    pimpl_->next();
+    return *this;
+}
+
+auto SearchEngine::Iterator::operator*() -> reference {
+    if (pimpl_->path.empty())
+}
+
+pointer operator->();
+
+friend bool operator== (const Iterator& lhs, const Iterator& rhs);
 
 } // namespace griha

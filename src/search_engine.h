@@ -6,10 +6,13 @@
 #pragma once
 
 #include <vector>
+#include <iterator>
 
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
 #include <boost/intrusive_ptr.hpp>
+#include <boost/scoped_ptr.hpp>
+#include <boost/function.hpp>
 
 namespace griha {
 
@@ -30,13 +33,59 @@ public:
 private:
     class Iterator {
 
+        friend class SearchEngine;
+
         struct Impl;
 
     public:
-        using value_type = paths_type;
+        class Accessor {
+            
+            struct Impl;
+
+        public:
+            using visitor_type = boost::function<void (const boost::filesystem::path&)>;
+
+        public:
+            ~Accessor();
+
+            Accessor(const Accessor& src);
+            Accessor(Accessor&& src);
+
+            Accessor& operator= (const Accessor& rhs);
+            Accessor& operator= (Accessor&& rhs);
+
+            void visit(const visitor_type& visitor);
+
+        private:
+            explicit Accessor(Iterator& it);
+
+        private:
+            boost::scoped_ptr<Impl> pimpl_;
+        };
+
+        using difference_type = void;
+        using value_type = Accessor;
+        using reference = value_type&;
+        using pointer = value_type*;
+        using iterator_category = std::input_iterator_tag;
+
+    public:
+        ~Iterator();
+
+        Iterator& operator++();
+        
+        reference operator*();
+        pointer operator->();
+
+        friend bool operator== (const Iterator& lhs, const Iterator& rhs);
+        friend bool operator!= (const Iterator& lhs, const Iterator& rhs) {
+            return !(lhs == rhs);
+        }
 
     private:
-        boost::intrusive_ptr<Impl> pimpl_;
+        explicit Iterator(Impl* impl);
+    private:
+        boost::scoped_ptr<Impl> pimpl_;
     };
 
 public:
