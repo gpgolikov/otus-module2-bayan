@@ -130,9 +130,6 @@ int main(int argc, char* argv[]) {
     if (paths_scan.empty())
         paths_scan.push_back(fs::current_path());
 
-    for (auto& path : paths_exclude)
-        path = fs::system_complete(path);
-
     SearchEngine::InitParams init_params = {
         halgo,
         block_size,
@@ -147,7 +144,7 @@ int main(int argc, char* argv[]) {
 
     for (const auto& v : sengine) {
         v.visit([] (const fs::path& path) {
-            std::cout << path << std::endl;
+            std::cout << fs::canonical(fs::system_complete(path)).string() << std::endl;
         });
         endl(std::cout);
     }

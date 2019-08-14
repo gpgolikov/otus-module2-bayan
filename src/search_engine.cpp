@@ -29,13 +29,16 @@ namespace griha {
 
 namespace {
 
-bool is_excluded(const fs::path& path, const SearchEngine::paths_type& paths_exclude) {
+bool is_excluded(const fs::path& path,
+                 const fs::path& path_exclude_from,
+                 const SearchEngine::paths_type& paths_exclude) {
+
     if (paths_exclude.empty())
         return false;
 
-    const auto p = fs::system_complete(path);
+    const auto p = fs::relative(path, path_exclude_from);
     const auto it = rng::find_if(paths_exclude, [&lhs = p] (const fs::path& rhs) {
-        return rng::mismatch(lhs, rhs).second == rhs.end();
+        return rng::search(lhs, rhs) != lhs.end();
     });
     return it != paths_exclude.end();
 }
@@ -110,6 +113,8 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
     CryptoPP::HashFilter hash_filter;
     /// @}
 
+    fs::path path_exclude_from;
+
     std::vector<char> buffer;
     Node root;
 
@@ -145,7 +150,7 @@ struct SearchEngine::Iterator::Impl {
     cont::slist<typename nodes_type::const_iterator> path;
 
     explicit Impl(const node_type& r);
-    Impl(const node_type& r, typename nodes_type::const_iterator& it);
+    Impl(const node_type& r, const typename nodes_type::const_iterator& it);
 
     void lookup_end_at_left();
     void next();
@@ -173,7 +178,7 @@ const std::string& SearchEngine::Impl::hash_block(std::ifstream& is, size_t leve
 }
 
 void SearchEngine::Impl::pre_process(const fs::path& file_path) {
-    if (is_excluded(file_path, paths_exclude) ||
+    if (is_excluded(file_path, path_exclude_from, paths_exclude) ||
             !fs::is_regular_file(file_path))
         return;
 
@@ -231,8 +236,7 @@ void SearchEngine::Impl::run(bool recursive) {
             continue;
         }
 
-        if (is_excluded(path, paths_exclude))
-            continue;
+        path_exclude_from = path;
 
         if (recursive)
             std::for_each(
@@ -248,7 +252,7 @@ void SearchEngine::Impl::run(bool recursive) {
 SearchEngine::Iterator::Impl::Impl(const node_type& r) 
     : accessor(Accessor::Impl { r, boost::none, false }) {}
 
-SearchEngine::Iterator::Impl::Impl(const node_type& r, typename nodes_type::const_iterator& it) 
+SearchEngine::Iterator::Impl::Impl(const node_type& r, const typename nodes_type::const_iterator& it) 
     : accessor(Accessor::Impl { r, it, false }) {
     path.push_front(it);
 }

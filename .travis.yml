@@ -22,4 +22,4 @@ deploy:
   - provider: script
     skip_cleanup: true
     script:
-    - curl -f -T nickname-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb -ugpgolikov:$BINTRAY_API_KEY "https://api.bintray.com/content/gpgolikov/otus-cpp/homework/$TRAVIS_BUILD_NUMBER/nickname-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb;deb_distribution=xenial;deb_component=main;deb_architecture=amd64;publish=1"
+    - curl -f -T bayan-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb -ugpgolikov:$BINTRAY_API_KEY "https://api.bintray.com/content/gpgolikov/otus-cpp/homework/$TRAVIS_BUILD_NUMBER/bayan-0.0.$TRAVIS_BUILD_NUMBER-Linux.deb;deb_distribution=xenial;deb_component=main;deb_architecture=amd64;publish=1"

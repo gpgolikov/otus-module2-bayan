@@ -15,7 +15,7 @@ endif()
 
 include(${CMAKE_BINARY_DIR}/conan.cmake)
 
-set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+# set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
 conan_cmake_run(REQUIRES
                     Catch2/2.7.2@catchorg/stable
@@ -27,7 +27,6 @@ conan_cmake_run(REQUIRES
                 BUILD missing)
 
 add_subdirectory(src)
-add_subdirectory(test)
 
 set(CPACK_GENERATOR DEB)
 

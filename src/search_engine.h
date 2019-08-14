@@ -1,6 +1,6 @@
 /// @file   search_engine.h
 /// @brief  This file contains declaration of SearchEngine class provides base search
-///         driver that is searching for duplicates of files in specified locations.
+///         driver that searches for duplicates of files in specified locations.
 /// @author griha
 
 #pragma once
