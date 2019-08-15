@@ -79,7 +79,10 @@ auto create_rxpatters(const std::wstring& patterns) {
 int main(int argc, char* argv[]) {
     using namespace griha;
 
-    std::wcout.imbue(std::locale { setlocale(LC_ALL, "") });
+    std::locale loc { setlocale(LC_ALL, "") };
+
+    std::wcout.imbue(loc);
+    boost::filesystem::path::imbue(loc);
 
     constexpr auto c_default_block_size = 1024;
     constexpr auto c_default_file_min_size = 1;
