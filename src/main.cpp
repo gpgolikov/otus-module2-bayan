@@ -80,7 +80,8 @@ auto create_rxpatters(const std::wstring& patterns) {
 int main(int argc, char* argv[]) {
     using namespace griha;
 
-    std::locale loc { setlocale(LC_ALL, "") };
+    boost::locale::generator gen;
+    std::locale loc = gen("");
 
     std::locale::global(loc);
     boost::filesystem::path::imbue(loc);
