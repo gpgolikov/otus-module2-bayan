@@ -79,6 +79,8 @@ auto create_rxpatters(const std::wstring& patterns) {
 int main(int argc, char* argv[]) {
     using namespace griha;
 
+    setlocale(LC_ALL, "");
+
     constexpr auto c_default_block_size = 1024;
     constexpr auto c_default_file_min_size = 1;
     constexpr auto c_default_hash_algo = griha::hash_algo::md5;

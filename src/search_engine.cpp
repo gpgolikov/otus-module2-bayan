@@ -190,18 +190,19 @@ void SearchEngine::Impl::process(const fs::path& file_path) {
             fs::file_size(file_path) < file_min_size)
         return;
 
-    fs::ifstream ifs { file_path };
+    fs::ifstream ifs { file_path, std::ios_base::binary|std::ios_base::in };
 
     size_t level = 0;
-    for (auto n = &root;;++level) {
+    for (auto n = &root;; ++level) {
         if (!n->file_to_compare.empty()) {
-            fs::ifstream ifs_to_compare { n->file_to_compare };
+            fs::ifstream ifs_to_compare { n->file_to_compare, std::ios_base::binary|std::ios_base::in };
             auto block_to_compare = hash_block(ifs_to_compare, level);
+            auto& nn = n->childs[std::move(block_to_compare)];
             if (ifs_to_compare.eof()) {
-                n->childs[std::move(block_to_compare)].duplicates.push_back(n->file_to_compare);
+                nn.duplicates.push_back(n->file_to_compare);
                 n->file_to_compare.clear();
             } else
-                n->childs[std::move(block_to_compare)].file_to_compare.swap(n->file_to_compare);
+                nn.file_to_compare.swap(n->file_to_compare);
         } else if (n->childs.empty()) {
             n->file_to_compare = file_path;
             break;
