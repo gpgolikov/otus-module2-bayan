@@ -79,7 +79,7 @@ auto create_rxpatters(const std::wstring& patterns) {
 int main(int argc, char* argv[]) {
     using namespace griha;
 
-    std::cout << setlocale(LC_ALL, "") << std::endl;
+    std::wcout.imbue(std::locale { setlocale(LC_ALL, "") });
 
     constexpr auto c_default_block_size = 1024;
     constexpr auto c_default_file_min_size = 1;
@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
 
     for (const auto& v : sengine) {
         v.visit([] (const fs::path& path) {
-            std::cout << fs::canonical(fs::system_complete(path)).string() << std::endl;
+            std::wcout << fs::canonical(fs::system_complete(path)).wstring() << std::endl;
         });
         endl(std::cout);
     }
