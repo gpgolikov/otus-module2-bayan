@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <boost/program_options.hpp>
+#include <boost/locale.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
 #include <boost/tokenizer.hpp>
@@ -81,7 +82,7 @@ int main(int argc, char* argv[]) {
 
     std::locale loc { setlocale(LC_ALL, "") };
 
-    std::wcout.imbue(loc);
+    std::locale::global(loc);
     boost::filesystem::path::imbue(loc);
 
     constexpr auto c_default_block_size = 1024;
@@ -149,7 +150,7 @@ int main(int argc, char* argv[]) {
 
     for (const auto& v : sengine) {
         v.visit([] (const fs::path& path) {
-            std::wcout << fs::canonical(fs::system_complete(path)).wstring() << std::endl;
+            std::cout << fs::canonical(fs::system_complete(path)).string() << std::endl;
         });
         endl(std::cout);
     }
