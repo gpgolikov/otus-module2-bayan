@@ -59,7 +59,7 @@ bool match_any(const fs::path& p, const SearchEngine::rxpatterns_type& patterns)
         return true;
 
     for (const auto& pattern : patterns) {
-        if (!boost::regex_match(p.filename().wstring(), pattern))
+        if (!boost::regex_match(p.filename().string(), pattern))
             continue;
         return true;
     }

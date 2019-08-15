@@ -89,7 +89,7 @@ public:
     };
 
     using paths_type = std::vector<boost::filesystem::path>;
-    using rxpatterns_type = std::vector<boost::wregex>;
+    using rxpatterns_type = std::vector<boost::regex>;
 
     using iterator = Iterator;
     using const_iterator = Iterator;

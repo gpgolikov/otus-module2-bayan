@@ -21,9 +21,6 @@ $ apt install libc++1-7 libc++abi-7
 
 ```
 
-## Unicode
-_bayan_ tool uses wide char string for internal string storage. All input strings or file names will be convert to wide string using of current local.
-
 ## Usage
 _bayan_ scans filesystem for duplicates and prints result to standard output by linebreak separated list where different files are separated by additional linebreak.
 

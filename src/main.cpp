@@ -5,7 +5,6 @@
 #include <vector>
 
 #include <boost/program_options.hpp>
-#include <boost/locale.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/regex.hpp>
 #include <boost/tokenizer.hpp>
@@ -58,13 +57,13 @@ void usage(const char* argv0, std::ostream& os, const po::options_description& o
        << '\t' << opts_desc << std::endl;
 }
 
-auto create_rxpatters(const std::wstring& patterns) {
-    using separator_type = boost::char_separator<wchar_t>;
-    using tokenizer_type = boost::tokenizer<separator_type, std::wstring::const_iterator, std::wstring>;
+auto create_rxpatters(const std::string& patterns) {
+    using separator_type = boost::char_separator<char>;
+    using tokenizer_type = boost::tokenizer<separator_type>;
 
-    std::vector<boost::wregex> ret;
+    std::vector<boost::regex> ret;
     
-    tokenizer_type tok { patterns, separator_type { L",;:" } };
+    tokenizer_type tok { patterns, separator_type { ",;:" } };
     for (const auto& t : tok)
         ret.emplace_back(t, boost::regex::extended|boost::regex::icase);
 
@@ -79,12 +78,6 @@ auto create_rxpatters(const std::wstring& patterns) {
 
 int main(int argc, char* argv[]) {
     using namespace griha;
-
-    boost::locale::generator gen;
-    std::locale loc = gen("");
-
-    std::locale::global(loc);
-    boost::filesystem::path::imbue(loc);
 
     constexpr auto c_default_block_size = 1024;
     constexpr auto c_default_file_min_size = 1;
@@ -143,7 +136,7 @@ int main(int argc, char* argv[]) {
         file_min_size,
         std::move(paths_scan),
         std::move(paths_exclude),
-        create_rxpatters(boost::from_local_8_bit(patterns))
+        create_rxpatters(patterns)
     };
     SearchEngine sengine { std::move(init_params) };
 
