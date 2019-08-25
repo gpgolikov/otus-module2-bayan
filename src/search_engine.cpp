@@ -15,6 +15,7 @@
 #include <boost/range/adaptor/sliced.hpp>
 #include <boost/range/algorithm.hpp>
 #include <boost/optional.hpp>
+#include <boost/scope_exit.hpp>
 
 #define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
 #include <cryptopp/md5.h>
@@ -122,14 +123,14 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
     void clear();
 
     /// @brief Perfomrs hash function on block specified by @c level arguments
-    /// @param ifs Input file stream
+    /// @param fd Input file stream
     /// @param level Value of level to describe a block to be hashed
     /// @return Digest value in base64 format
     /// @note Returns constant reference on @hash_sink member
-    const std::string& hash_block(fs::ifstream& ifs, size_t level);
+    const std::string& hash_block(FILE* fd, size_t level);
 
     void pre_process(const fs::path& file_path);
-    Node& process(fs::ifstream& ifs, Node& n, size_t level);
+    Node& process(FILE* fd, Node& n, size_t level);
     void process(const fs::path& file_path);
     void run(bool recursive);
 };
@@ -161,17 +162,17 @@ void SearchEngine::Impl::clear() {
     roots.clear();
 }
 
-const std::string& SearchEngine::Impl::hash_block(fs::ifstream& ifs, size_t level) {
-    assert(ifs.is_open() && ifs.good());
+const std::string& SearchEngine::Impl::hash_block(FILE* fd, size_t level) {
+    assert(feof(fd) == 0 && ferror(fd) == 0);
 
     auto offset = level * block_size;
-    if (ifs.tellg() != offset)
-        ifs.seekg(offset, std::ios_base::beg);
-    assert(ifs.good());
+    if (ftell(fd) != offset)
+        fseek(fd, offset, SEEK_SET);
+    assert(feof(fd) == 0 && ferror(fd) == 0);
 
-    ifs.read(buffer.data(), block_size);
-    if (ifs.eof())
-        rng::fill(buffer | boost::adaptors::sliced(ifs.gcount(), block_size), '\0');
+    auto size = fread(buffer.data(), sizeof(char), block_size, fd);
+    if (feof(fd))
+        rng::fill(buffer | boost::adaptors::sliced(size, block_size), '\0');
 
     hash_sink.clear(); // actually this call never reduces the capacity of string
     hash_filter.PutMessageEnd(reinterpret_cast<uint8_t*>(buffer.data()), block_size);
@@ -186,19 +187,23 @@ void SearchEngine::Impl::pre_process(const fs::path& file_path) {
     process(file_path);
 }
 
-SearchEngine::Impl::Node& SearchEngine::Impl::process(fs::ifstream& ifs, Node& n, size_t level) {
-    assert(ifs.good() && n.files.empty() != n.childs.empty());
+SearchEngine::Impl::Node& SearchEngine::Impl::process(FILE* fd, Node& n, size_t level) {
+    assert(feof(fd) == 0 && n.files.empty() != n.childs.empty());
 
     if (n.childs.empty()) {
-        fs::ifstream ifs_to_compare(n.files.front(), std::ios_base::binary|std::ios_base::in);
-        ifs_to_compare.rdbuf()->pubsetbuf(buffer.data(), block_size);
+        FILE* fd_to_compare = fopen(n.files.front().string().data(), "r");
+        BOOST_SCOPE_EXIT(&fd_to_compare) {
+            fclose(fd_to_compare);
+        } BOOST_SCOPE_EXIT_END;
 
-        auto block_to_compare = hash_block(ifs_to_compare, level);
+        setbuf(fd_to_compare, nullptr);
+
+        auto block_to_compare = hash_block(fd_to_compare, level);
         auto& nn = n.childs[std::move(block_to_compare)];
         nn.files.swap(n.files);
     }
 
-    auto block = hash_block(ifs, level);
+    auto block = hash_block(fd, level);
     return n.childs[std::move(block)];
 }
 
@@ -219,13 +224,17 @@ void SearchEngine::Impl::process(const fs::path& file_path) {
         return;
     }
 
-    fs::ifstream ifs(file_path, std::ios_base::binary|std::ios_base::in);
-    ifs.rdbuf()->pubsetbuf(buffer.data(), block_size);
+    FILE* fd = fopen(file_path.string().data(), "r");
+    BOOST_SCOPE_EXIT(&fd) {
+        fclose(fd);
+    } BOOST_SCOPE_EXIT_END;
+
+    setbuf(fd, nullptr);
 
     size_t level = 0;
     for (auto n = &it->second;; 
-         n = &process(ifs, *n, level), ++level) {
-        if (ifs.eof() || (n->files.empty() && n->childs.empty())) {
+         n = &process(fd, *n, level), ++level) {
+        if (feof(fd) || (n->files.empty() && n->childs.empty())) {
             n->files.push_front(file_path);
             break;
         }
