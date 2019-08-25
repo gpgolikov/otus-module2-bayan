@@ -171,7 +171,7 @@ const std::string& SearchEngine::Impl::hash_block(FILE* fd, size_t level) {
     assert(feof(fd) == 0 && ferror(fd) == 0);
 
     auto size = fread(buffer.data(), sizeof(char), block_size, fd);
-    if (feof(fd))
+    if (size != block_size)
         rng::fill(buffer | boost::adaptors::sliced(size, block_size), '\0');
 
     hash_sink.clear(); // actually this call never reduces the capacity of string
@@ -234,7 +234,7 @@ void SearchEngine::Impl::process(const fs::path& file_path) {
     size_t level = 0;
     for (auto n = &it->second;; 
          n = &process(fd, *n, level), ++level) {
-        if (feof(fd) || (n->files.empty() && n->childs.empty())) {
+        if ((level * block_size) >= file_size || (n->files.empty() && n->childs.empty())) {
             n->files.push_front(file_path);
             break;
         }
