@@ -122,6 +122,12 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
 
     void clear();
 
+    /// @brief Perfomrs hash function on current block
+    /// @param fd Input file stream
+    /// @return Digest value in base64 format
+    /// @note Returns constant reference on @hash_sink member
+    const std::string& hash_block(FILE* fd);
+    
     /// @brief Perfomrs hash function on block specified by @c level arguments
     /// @param fd Input file stream
     /// @param level Value of level to describe a block to be hashed
@@ -162,12 +168,7 @@ void SearchEngine::Impl::clear() {
     roots.clear();
 }
 
-const std::string& SearchEngine::Impl::hash_block(FILE* fd, size_t level) {
-    assert(feof(fd) == 0 && ferror(fd) == 0);
-
-    auto offset = level * block_size;
-    if (ftell(fd) != offset)
-        fseek(fd, offset, SEEK_SET);
+const std::string& SearchEngine::Impl::hash_block(FILE* fd) {
     assert(feof(fd) == 0 && ferror(fd) == 0);
 
     auto size = fread(buffer.data(), sizeof(char), block_size, fd);
@@ -177,6 +178,16 @@ const std::string& SearchEngine::Impl::hash_block(FILE* fd, size_t level) {
     hash_sink.clear(); // actually this call never reduces the capacity of string
     hash_filter.PutMessageEnd(reinterpret_cast<uint8_t*>(buffer.data()), block_size);
     return hash_sink;
+}
+
+const std::string& SearchEngine::Impl::hash_block(FILE* fd, size_t level) {
+    assert(feof(fd) == 0 && ferror(fd) == 0);
+
+    auto offset = level * block_size;
+    fseek(fd, offset, SEEK_SET);
+    assert(feof(fd) == 0 && ferror(fd) == 0);
+
+    return hash_block(fd);
 }
 
 void SearchEngine::Impl::pre_process(const fs::path& file_path) {
@@ -203,7 +214,7 @@ SearchEngine::Impl::Node& SearchEngine::Impl::process(FILE* fd, Node& n, size_t 
         nn.files.swap(n.files);
     }
 
-    auto block = hash_block(fd, level);
+    auto block = hash_block(fd);
     return n.childs[std::move(block)];
 }
 

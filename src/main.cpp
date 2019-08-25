@@ -144,7 +144,7 @@ int main(int argc, char* argv[]) {
 
     for (const auto& v : sengine) {
         v.visit([] (const fs::path& path) {
-            std::cout << fs::absolute(fs::system_complete(path)).string() << std::endl;
+            std::cout << fs::absolute(path).lexically_normal().string() << std::endl;
         });
         endl(std::cout);
     }
