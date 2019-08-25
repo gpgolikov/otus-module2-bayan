@@ -5,15 +5,17 @@
 #include "search_engine.h"
 
 #include <iostream>
-#include <fstream>
 #include <stdexcept>
+#include <cstdio>
 
 #include <boost/bind.hpp>
 #include <boost/container/map.hpp>
 #include <boost/container/slist.hpp>
+#include <boost/tuple/tuple.hpp>
 #include <boost/range/adaptor/sliced.hpp>
 #include <boost/range/algorithm.hpp>
 #include <boost/optional.hpp>
+#include <boost/scope_exit.hpp>
 
 #define CRYPTOPP_ENABLE_NAMESPACE_WEAK 1
 #include <cryptopp/md5.h>
@@ -84,10 +86,10 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
     struct Node;
     using nodes_type = cont::map<std::string, Node>;
     struct Node {
-        paths_type duplicates;
+        cont::slist<fs::path> files;
         nodes_type childs;
-        fs::path file_to_compare;
     };
+    using roots_type = cont::map<uintmax_t, Node>;
 
     explicit Impl(SearchEngine::InitParams init_params)
         : block_size(init_params.block_size)
@@ -116,18 +118,19 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
     fs::path path_exclude_from;
 
     std::vector<char> buffer;
-    Node root;
+    roots_type roots;
 
     void clear();
 
     /// @brief Perfomrs hash function on block specified by @c level arguments
-    /// @param is Input filestream
+    /// @param fd Input file stream
     /// @param level Value of level to describe a block to be hashed
     /// @return Digest value in base64 format
     /// @note Returns constant reference on @hash_sink member
-    const std::string& hash_block(std::ifstream& is, size_t level);
+    const std::string& hash_block(FILE* fd, size_t level);
 
     void pre_process(const fs::path& file_path);
+    Node& process(FILE* fd, Node& n, size_t level);
     void process(const fs::path& file_path);
     void run(bool recursive);
 };
@@ -135,42 +138,41 @@ struct SearchEngine::Impl : boost::intrusive_ref_counter<SearchEngine::Impl, boo
 
 struct SearchEngine::Iterator::Accessor::Impl {
     using node_type = SearchEngine::Impl::Node;
-    using nodes_type = SearchEngine::Impl::nodes_type;
-
-    const node_type& root;
-    boost::optional<typename nodes_type::const_iterator> iterator;
-    bool on_file_to_compare;
+    const node_type* node;
 };
 
 struct SearchEngine::Iterator::Impl {
     using node_type = Accessor::Impl::node_type;
-    using nodes_type = Accessor::Impl::nodes_type;
+    using nodes_type = SearchEngine::Impl::nodes_type;
+    using roots_type = SearchEngine::Impl::roots_type;
     
+    const roots_type& roots;
     Accessor::Impl accessor;
+    roots_type::const_iterator root_it;
     cont::slist<typename nodes_type::const_iterator> path;
 
-    explicit Impl(const node_type& r);
-    Impl(const node_type& r, const typename nodes_type::const_iterator& it);
+    explicit Impl(const roots_type& r);
+    Impl(const roots_type& r, const typename roots_type::const_iterator& it);
 
     void lookup_end_at_left();
     void next();
 };
 
 void SearchEngine::Impl::clear() {
-    root.duplicates.clear();
-    root.childs.clear();
-    root.file_to_compare.clear();
+    roots.clear();
 }
 
-const std::string& SearchEngine::Impl::hash_block(std::ifstream& is, size_t level) {
-    assert(is.is_open() && is.good());
+const std::string& SearchEngine::Impl::hash_block(FILE* fd, size_t level) {
+    assert(feof(fd) == 0 && ferror(fd) == 0);
 
-    is.seekg(level * block_size, std::ios_base::beg);
-    assert(is.good());
+    auto offset = level * block_size;
+    if (ftell(fd) != offset)
+        fseek(fd, offset, SEEK_SET);
+    assert(feof(fd) == 0 && ferror(fd) == 0);
 
-    is.read(buffer.data(), block_size);
-    if (is.eof())
-        rng::fill(buffer | boost::adaptors::sliced(is.gcount(), block_size), '\0');
+    auto size = fread(buffer.data(), sizeof(char), block_size, fd);
+    if (feof(fd))
+        rng::fill(buffer | boost::adaptors::sliced(size, block_size), '\0');
 
     hash_sink.clear(); // actually this call never reduces the capacity of string
     hash_filter.PutMessageEnd(reinterpret_cast<uint8_t*>(buffer.data()), block_size);
@@ -185,34 +187,51 @@ void SearchEngine::Impl::pre_process(const fs::path& file_path) {
     process(file_path);
 }
 
+SearchEngine::Impl::Node& SearchEngine::Impl::process(FILE* fd, Node& n, size_t level) {
+    assert(feof(fd) == 0 && n.files.empty() != n.childs.empty());
+
+    if (n.childs.empty()) {
+        FILE* fd_to_compare = fopen(n.files.front().string().data(), "r");
+        BOOST_SCOPE_EXIT(&fd_to_compare) {
+            fclose(fd_to_compare);
+        } BOOST_SCOPE_EXIT_END;
+
+        auto block_to_compare = hash_block(fd_to_compare, level);
+        auto& nn = n.childs[std::move(block_to_compare)];
+        nn.files.swap(n.files);
+    }
+
+    auto block = hash_block(fd, level);
+    return n.childs[std::move(block)];
+}
+
+
 void SearchEngine::Impl::process(const fs::path& file_path) {
-    if (!match_any(file_path, rxpatterns) ||
-            fs::file_size(file_path) < file_min_size)
+    if (!match_any(file_path, rxpatterns))
+        return;
+    
+    auto file_size = fs::file_size(file_path);
+    if (file_size < file_min_size)
         return;
 
-    fs::ifstream ifs { file_path, std::ios_base::binary|std::ios_base::in };
+    auto it = roots.find(file_size);
+    if (it == roots.end()) {
+        // no comparison required
+        auto& n = roots[file_size];
+        n.files.push_front(file_path);
+        return;
+    }
+
+    FILE* fd = fopen(file_path.string().data(), "r");
+    BOOST_SCOPE_EXIT(&fd) {
+        fclose(fd);
+    } BOOST_SCOPE_EXIT_END;
 
     size_t level = 0;
-    for (auto n = &root;; ++level) {
-        if (!n->file_to_compare.empty()) {
-            fs::ifstream ifs_to_compare { n->file_to_compare, std::ios_base::binary|std::ios_base::in };
-            auto block_to_compare = hash_block(ifs_to_compare, level);
-            auto& nn = n->childs[std::move(block_to_compare)];
-            if (ifs_to_compare.eof()) {
-                nn.duplicates.push_back(n->file_to_compare);
-                n->file_to_compare.clear();
-            } else
-                nn.file_to_compare.swap(n->file_to_compare);
-        } else if (n->childs.empty()) {
-            n->file_to_compare = file_path;
-            break;
-        }
-
-        auto block = hash_block(ifs, level);
-        n = &n->childs[std::move(block)];
-
-        if (ifs.eof()) {
-            n->duplicates.push_back(file_path);
+    for (auto n = &it->second;; 
+         n = &process(fd, *n, level), ++level) {
+        if (feof(fd) || (n->files.empty() && n->childs.empty())) {
+            n->files.push_front(file_path);
             break;
         }
     }
@@ -250,70 +269,73 @@ void SearchEngine::Impl::run(bool recursive) {
     }
 }
 
-SearchEngine::Iterator::Impl::Impl(const node_type& r) 
-    : accessor(Accessor::Impl { r, boost::none, false }) {}
+SearchEngine::Iterator::Impl::Impl(const roots_type& r) 
+    : roots(r)
+    , accessor(Accessor::Impl { nullptr })
+    , root_it(r.end()) {}
 
-SearchEngine::Iterator::Impl::Impl(const node_type& r, const typename nodes_type::const_iterator& it) 
-    : accessor(Accessor::Impl { r, it, false }) {
-    path.push_front(it);
-}
+SearchEngine::Iterator::Impl::Impl(const roots_type& r, const typename roots_type::const_iterator& it) 
+    : roots(r)
+    , accessor(Accessor::Impl { &it->second })
+    , root_it(it) {}
 
 void SearchEngine::Iterator::Impl::lookup_end_at_left() {
-    assert(!path.empty());
-    assert(path.front() != accessor.root.childs.end());
-
-    *accessor.iterator = path.front();
-
-    const auto& n = path.front()->second;
-    if (!n.duplicates.empty()) {
-        accessor.on_file_to_compare = false;
+    if (root_it == roots.end()) {
+        accessor.node = nullptr;
         return;
     }
-    
-    if (!n.file_to_compare.empty()) {
-        accessor.on_file_to_compare = true;
+
+    if (!path.empty()) {
+        auto& n = path.front()->second;
+        accessor.node = &n;
+
+        if (!n.files.empty())
+            return;
+        
+        assert(!n.childs.empty());
+        path.push_front(n.childs.begin());
+    } else if (root_it->second.files.empty()) {
+        path.push_front(root_it->second.childs.begin());
+    } else {
+        accessor.node = &root_it->second;
         return;
     }
-    
-    assert(!n.childs.empty());
-    path.push_front(n.childs.begin());
+
     lookup_end_at_left();
 }
 
 void SearchEngine::Iterator::Impl::next() {
-    if (path.empty()) { // achieved end iterator in empty collection
-        path.push_front(accessor.root.childs.end());
-        accessor.on_file_to_compare = false;
+    if (root_it == roots.end())
+        return; // stay on end iterator forever
+
+    if (path.empty()) {
+        if (root_it->second.childs.empty())
+            ++root_it;
+        else
+            path.push_front(root_it->second.childs.begin());
+
+        lookup_end_at_left();
         return;
     }
 
     auto it = path.front();
-    if (it == accessor.root.childs.end())
-        return; // stay on end iterator forever
-
-    if (!accessor.on_file_to_compare && !it->second.file_to_compare.empty()) {
-        accessor.on_file_to_compare = true;
-        return; // just move to file_to_compare
-    }
 
     // find next element fits for end lookup procedure
     if (it->second.childs.empty()) {
         // go right or go up and right
         path.pop_front();
         for (++it; 
-             it != accessor.root.childs.end() &&
+             it != root_it->second.childs.end() &&
                 !path.empty() &&
                 it == path.front()->second.childs.end();
              ++it) {
             it = path.front();
             path.pop_front();
         }
-        path.push_front(it);
-        if (it == accessor.root.childs.end()) {
-            accessor.iterator = boost::none;
-            accessor.on_file_to_compare = false;
-            return; // iterator has become end iterator
-        }
+        if (it == root_it->second.childs.end())
+            ++root_it;
+        else
+            path.push_front(it);
     } else {
         // go down
         path.push_front(it->second.childs.begin());
@@ -345,21 +367,11 @@ auto SearchEngine::Iterator::Accessor::operator= (const Accessor& rhs) -> Access
 }
 
 void SearchEngine::Iterator::Accessor::visit(const visitor_type& visitor) const {
-    if (!pimpl_->iterator) {
-        if (pimpl_->root.file_to_compare.empty())
-            throw std::logic_error("bad access");
+    if (pimpl_->node == nullptr)
+        throw std::logic_error("bad access");
 
-        visitor(pimpl_->root.file_to_compare);
-        return;
-    }
-
-    const auto it = *(pimpl_->iterator);
-    if (pimpl_->on_file_to_compare)
-        visitor(it->second.file_to_compare);
-    else {
-        for (const auto& path : it->second.duplicates)
-            visitor(path);
-    }
+    for (const auto& path : pimpl_->node->files)
+        visitor(path);
 }
 
 SearchEngine::Iterator::~Iterator() = default;
@@ -394,8 +406,8 @@ auto SearchEngine::Iterator::operator*() -> value_type {
 }
 
 bool operator== (const SearchEngine::Iterator& lhs, const SearchEngine::Iterator& rhs) {
-    return lhs.pimpl_->accessor.on_file_to_compare == rhs.pimpl_->accessor.on_file_to_compare
-            && lhs.pimpl_->path == rhs.pimpl_->path;
+    return lhs.pimpl_->root_it == rhs.pimpl_->root_it &&
+            lhs.pimpl_->path == rhs.pimpl_->path;
 }
 
 SearchEngine::~SearchEngine() = default;
@@ -404,19 +416,14 @@ SearchEngine::SearchEngine(InitParams init_params)
     : pimpl_(new Impl { std::move(init_params) }) {}
 
 auto SearchEngine::begin() const -> const_iterator {
-    if (pimpl_->root.childs.empty()) {
-        if (!pimpl_->root.file_to_compare.empty())
-            return Iterator { new Iterator::Impl { pimpl_->root } };
-        return Iterator { new Iterator::Impl { pimpl_->root, pimpl_->root.childs.cbegin() } };
-    }
-
-    Iterator ret { new Iterator::Impl { pimpl_->root, pimpl_->root.childs.cbegin() } };
-    ret.pimpl_->lookup_end_at_left();
-    return ret;
+    if (pimpl_->roots.empty())
+        return Iterator { new Iterator::Impl { pimpl_->roots } };
+    else
+        return Iterator { new Iterator::Impl { pimpl_->roots, pimpl_->roots.begin() } };
 }
 
 auto SearchEngine::end() const -> const_iterator {
-    return Iterator { new Iterator::Impl { pimpl_->root, pimpl_->root.childs.cend() } };
+    return Iterator { new Iterator::Impl { pimpl_->roots, pimpl_->roots.end() } };
 }
 
 void SearchEngine::run(bool recursive) {
